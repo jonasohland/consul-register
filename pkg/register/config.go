@@ -1,8 +1,9 @@
-package registrator
+package register
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,8 +12,9 @@ import (
 	"time"
 
 	config "github.com/hashicorp/consul/agent/config"
+
 	"github.com/hashicorp/consul/agent/structs"
-	api "github.com/hashicorp/consul/api"
+	"github.com/hashicorp/consul/api"
 	mps "github.com/mitchellh/mapstructure"
 	"github.com/samber/lo"
 )
@@ -25,6 +27,7 @@ type SourceConfig struct {
 type Config struct {
 	Ctx     context.Context
 	Sources SourceConfig
+	Client  *api.Client
 }
 
 type ConfigAccumulator struct {
@@ -59,6 +62,10 @@ func timeDurationToStringHookFunc() mps.DecodeHookFunc {
 }
 
 func serviceToAgentService(svc *structs.ServiceDefinition) (*api.AgentServiceRegistration, error) {
+	if svc.Name == "" {
+		return nil, errors.New("service name is required")
+	}
+
 	var result api.AgentServiceRegistration
 	d, err := mps.NewDecoder(&mps.DecoderConfig{
 		Result:           &result,
@@ -149,7 +156,7 @@ func LoadSources(sources *SourceConfig) (*RuntimeConfig, error) {
 	for _, service := range result.RuntimeConfig.Services {
 		svc, err := serviceToAgentService(service)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to parse service definition files: %w", err)
 		}
 
 		rtc.Services = append(rtc.Services, svc)

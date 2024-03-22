@@ -1,14 +1,15 @@
-module github.com/jonasohland/consul-registrator
+module github.com/jonasohland/consul-register
 
 go 1.22.1
 
 require (
 	github.com/alecthomas/kong v0.9.0
+	github.com/google/uuid v1.3.0
 	github.com/hashicorp/consul v1.16.0
 	github.com/hashicorp/consul/api v1.22.0
-	github.com/jonasohland/ext v0.0.0-20240321155253-83c9140623e0
+	github.com/jonasohland/ext v0.0.0-20240322203910-694f263730ec
 	github.com/jonasohland/slog-ext v0.0.0-20240321144838-5f257e6bddbd
-	github.com/kr/pretty v0.3.0
+	github.com/mattn/go-isatty v0.0.17
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/samber/lo v1.39.0
 )
@@ -118,10 +119,8 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/miekg/dns v1.1.41 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
@@ -149,7 +148,6 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
-	github.com/rogpeppe/go-internal v1.10.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/segmentio/fasthash v1.0.3 // indirect

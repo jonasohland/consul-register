@@ -1,1 +1,0 @@
-package registrator_test
