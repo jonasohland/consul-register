@@ -11,14 +11,17 @@ import (
 
 	"github.com/hashicorp/consul/api"
 	slx "github.com/jonasohland/slog-ext/pkg/slog-ext"
+	"github.com/r3labs/diff/v3"
+	"github.com/samber/lo"
 )
 
 type QueryRegistration struct {
 	def    *api.PreparedQueryDefinition
 	client *api.Client
 
-	update chan *api.PreparedQueryDefinition
-	cancel context.CancelFunc
+	deleteOnExit bool
+	update       chan *api.PreparedQueryDefinition
+	cancel       context.CancelFunc
 }
 
 func (s *QueryRegistration) Update(def *api.PreparedQueryDefinition) {
@@ -33,6 +36,7 @@ func NewPreparedQueryRegistration(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	client *api.Client,
+	deleteOnExit bool,
 	def *api.PreparedQueryDefinition,
 ) *QueryRegistration {
 	ctx, cancel := context.WithCancel(slx.WithContext(ctx, slx.FromContext(ctx).With("query-name", def.Name)))
@@ -41,8 +45,9 @@ func NewPreparedQueryRegistration(
 		def:    def,
 		client: client,
 
-		update: make(chan *api.PreparedQueryDefinition),
-		cancel: cancel,
+		deleteOnExit: deleteOnExit,
+		update:       make(chan *api.PreparedQueryDefinition),
+		cancel:       cancel,
 	}
 
 	wg.Add(1)
@@ -78,45 +83,48 @@ func (q *QueryRegistration) establish(ctx context.Context) error {
 
 		wait = Jitter(RetryRegisterTime, RetryRegisterJitter)
 
-		if q.def.Session != "" || q.def.ID != "" {
-			log.Info("destroy old query session", "session-id", q.def.Session)
+		queries, _, err := q.client.PreparedQuery().List((&api.QueryOptions{}).WithContext(ctx))
+		if err != nil {
+			return nil
+		}
 
-			if err := q.retryDestroy(ctx); err != nil {
-				log.Error("failed to destroy old prepared query registration")
+		existing, ok := lo.Find(queries, func(item *api.PreparedQueryDefinition) bool { return item.Name == q.def.Name })
+
+		if ok {
+			q.def.ID = existing.ID
+
+			_, err := q.client.PreparedQuery().Update(q.def, (&api.WriteOptions{}).WithContext(ctx))
+			if err != nil {
+				log.Error("failed to update existing prepared query", "error", err)
 				continue
 			}
+
+			log.Info("existing query updated", "query-id", q.def.ID)
+		} else {
+			// register the prepared query
+			queryId, _, err := q.client.PreparedQuery().Create(q.def, (&api.WriteOptions{}).WithContext(ctx))
+			if err != nil {
+				log.Error("failed to establish prepared query", "error", err)
+				continue
+			}
+
+			q.def.ID = queryId
+			log.Info("prepared query established", "query-id", q.def.ID)
 		}
 
-		// create a session
-		sessionId, _, err := q.client.Session().CreateNoChecks(&api.SessionEntry{
-			LockDelay: time.Second * 5,
-			Name:      fmt.Sprintf("prepared-query-%s", q.def.Name),
-			Behavior:  "delete",
-			TTL:       "10s",
-		}, (&api.WriteOptions{}).WithContext(ctx))
-		if err != nil {
-			log.Error("failed to establish lock session", "error", err)
-			continue
-		}
-
-		log.Info("session established", "session-id", sessionId)
-		q.def.Session = sessionId
-
-		// register the prepared query
-		queryId, _, err := q.client.PreparedQuery().Create(q.def, (&api.WriteOptions{}).WithContext(ctx))
-		if err != nil {
-			log.Error("failed to establish prepared query", "error", err)
-			continue
-		}
-
-		q.def.ID = queryId
-		log.Info("prepared query established", "query-id", q.def.ID, "session-id", q.def.Session)
 		return nil
 	}
 }
 
-func (q *QueryRegistration) keep(ctx context.Context) error {
+func (q *QueryRegistration) keepRegistered(ctx context.Context) error {
 	log := slx.FromContext(ctx)
+
+	// establish the query initially
+	if err := q.establish(ctx); err != nil {
+		return err
+	}
+
+	// keep it established
 	wait := 7 * time.Second
 	for {
 		select {
@@ -137,7 +145,7 @@ func (q *QueryRegistration) keep(ctx context.Context) error {
 		}
 
 		// check if the service is still registered
-		if err := q.renew(ctx, &wait); err != nil {
+		if err := q.renew(ctx); err != nil {
 			// if the context is cancelled, return without trying to fix anything
 			if ctx.Err() != nil {
 				return nil
@@ -145,10 +153,11 @@ func (q *QueryRegistration) keep(ctx context.Context) error {
 
 			log.Error(
 				"failed to renew query session",
-				"session-id", q.def.Session,
 				"query-id", q.def.ID,
 				"error", err,
 			)
+
+			q.def.ID = ""
 
 			// re-establish if an error occurs
 			if err := q.establish(ctx); err != nil {
@@ -158,23 +167,26 @@ func (q *QueryRegistration) keep(ctx context.Context) error {
 	}
 }
 
-func (q *QueryRegistration) renew(ctx context.Context, wait *time.Duration) error {
-	entry, _, err := q.client.Session().Renew(q.def.Session, (&api.WriteOptions{}).WithContext(ctx))
+func (q *QueryRegistration) renew(ctx context.Context) error {
+	def, _, err := q.client.PreparedQuery().Get(q.def.ID, (&api.QueryOptions{}).WithContext(ctx))
 	if err != nil {
 		return err
 	}
 
-	if entry == nil {
-		return errors.New("session expired")
-	}
+	if len(def) != 0 {
+		changes, err := diff.Diff(def[0], q.def)
+		if err != nil {
+			slx.FromContext(ctx).Error("failed to diff structs", "error", err)
+		}
 
-	ttl, err := time.ParseDuration(entry.TTL)
-	if err != nil {
-		return fmt.Errorf("invalid ttl returned by consul: %w", err)
-	}
+		if len(changes) > 0 {
+			return fmt.Errorf("definition changed in consul: %s", ChangelogToString(changes))
+		}
 
-	*wait = ttl / 2
-	return nil
+		return nil
+	} else {
+		return errors.New("prepared query was removed from consul")
+	}
 }
 
 func (q *QueryRegistration) retryDestroy(ctx context.Context) error {
@@ -189,27 +201,14 @@ func (q *QueryRegistration) retryDestroy(ctx context.Context) error {
 
 		wait = Jitter(RetryRemoveTime, RetryRemoveJitter)
 
-		if q.def.Session != "" {
-			_, err := q.client.Session().Destroy(q.def.ID, (&api.WriteOptions{}).WithContext(ctx))
-			if err != nil {
-				log.Error("failed to destroy query session")
-				continue
-			}
-
-			log.Info("query session destroyed", "session-id", q.def.Session)
-			q.def.Session = ""
+		_, err := q.client.PreparedQuery().Delete(q.def.ID, (&api.WriteOptions{}).WithContext(ctx))
+		if err != nil {
+			log.Error("failed to delete prepared query")
+			continue
 		}
 
-		if q.def.ID != "" {
-			_, err := q.client.PreparedQuery().Delete(q.def.ID, (&api.WriteOptions{}).WithContext(ctx))
-			if err != nil {
-				log.Error("failed to delete prepared query")
-				continue
-			}
-
-			log.Info("prepared query deleted", "query-id", q.def.ID)
-			q.def.ID = ""
-		}
+		log.Info("prepared query deleted", "query-id", q.def.ID)
+		q.def.ID = ""
 
 		return nil
 	}
@@ -226,16 +225,13 @@ func (q *QueryRegistration) run(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	log := slx.FromContext(ctx)
 
-	if err := q.establish(ctx); err != nil {
-		log.Error("failed to establish service registration")
-		return
-	}
-
-	if err := q.keep(ctx); err != nil {
+	if err := q.keepRegistered(ctx); err != nil {
 		log.Error("failed to keep query registration established")
 	}
 
-	if err := q.destroy(log); err != nil {
-		log.Error("failed to destroy prepared query")
+	if q.deleteOnExit {
+		if err := q.destroy(log); err != nil {
+			log.Error("failed to destroy prepared query")
+		}
 	}
 }

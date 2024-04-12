@@ -28,8 +28,9 @@ type registrationSvc struct {
 	log    *slog.Logger
 	client *api.Client
 
-	reloadCh chan<- chan error
-	sources  SourceConfig
+	reloadCh                    chan<- chan error
+	sources                     SourceConfig
+	deletePreparedQueriesOnExit bool
 
 	services map[string]*ServiceRegistration
 	queries  map[string]*QueryRegistration
@@ -91,7 +92,7 @@ func (r *registrationSvc) runConnectionMonitoring(ctx context.Context) {
 			}
 		} else {
 			if err := r.lastError.Clear(); err != nil {
-				r.log.Info("consul connection")
+				r.log.Info("consul connection healthy")
 			}
 		}
 	}
@@ -141,7 +142,7 @@ func (r *registrationSvc) reload(ctx context.Context) error {
 			continue
 		}
 
-		r.queries[def.Name] = NewPreparedQueryRegistration(ctx, &r.wg, r.client, def)
+		r.queries[def.Name] = NewPreparedQueryRegistration(ctx, &r.wg, r.client, r.deletePreparedQueriesOnExit, def)
 	}
 
 	// Remove no longer references service registrations
@@ -184,8 +185,9 @@ func New(config *Config) (RegistrationService, error) {
 		log:    log,
 		client: config.Client,
 
-		reloadCh: reloadCh,
-		sources:  config.Sources,
+		reloadCh:                    reloadCh,
+		sources:                     config.Sources,
+		deletePreparedQueriesOnExit: config.DeletePreparedQueriesOnExit,
 
 		services: make(map[string]*ServiceRegistration),
 		queries:  make(map[string]*QueryRegistration),

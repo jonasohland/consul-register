@@ -26,6 +26,8 @@ type Cmd struct {
 	ConfigDir  []string `short:"d" help:"Load configuration files from this directory, can be repeated"`
 	ConfigFile []string `short:"c" help:"Load configuration from this file, can be repeated"`
 
+	DeletePreparedQueries bool `help:"Do/Don't delete prepared queries on exit" negatable:""`
+
 	Address    string `short:"a" help:"Consul Agent http address"`
 	Token      string `short:"t" help:"Consul acl token"`
 	CaCert     string `help:"Consul TLS CA certificate"`
@@ -103,7 +105,8 @@ func main() {
 			ConfigDirectories: cmd.ConfigDir,
 			ConfigFiles:       cmd.ConfigFile,
 		},
-		Client: client,
+		Client:                      client,
+		DeletePreparedQueriesOnExit: cmd.DeletePreparedQueries,
 	}
 
 	svc, err := register.New(config)
