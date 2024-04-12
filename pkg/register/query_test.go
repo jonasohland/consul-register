@@ -33,7 +33,7 @@ func TestRegisterPreparedQuery(t *testing.T) {
 		},
 	}
 
-	registration := register.NewPreparedQueryRegistration(ctx, &wg, client, def1)
+	registration := register.NewPreparedQueryRegistration(ctx, &wg, client, true, def1)
 
 	time.Sleep(5 * time.Second)
 
