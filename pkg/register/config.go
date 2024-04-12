@@ -25,9 +25,12 @@ type SourceConfig struct {
 }
 
 type Config struct {
-	Ctx     context.Context
+	Ctx context.Context
+
 	Sources SourceConfig
 	Client  *api.Client
+
+	DeletePreparedQueriesOnExit bool
 }
 
 type ConfigAccumulator struct {

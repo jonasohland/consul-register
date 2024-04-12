@@ -11,6 +11,7 @@ require (
 	github.com/jonasohland/slog-ext v0.0.0-20240321144838-5f257e6bddbd
 	github.com/mattn/go-isatty v0.0.17
 	github.com/mitchellh/mapstructure v1.5.0
+	github.com/r3labs/diff/v3 v3.0.1
 	github.com/samber/lo v1.39.0
 )
 
@@ -155,6 +156,8 @@ require (
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/stretchr/testify v1.8.3 // indirect
 	github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926 // indirect
+	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.etcd.io/bbolt v1.3.7 // indirect
 	go.mongodb.org/mongo-driver v1.11.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
