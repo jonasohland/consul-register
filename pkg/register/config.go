@@ -107,6 +107,19 @@ func loadFromFile(file string, into *ConfigAccumulator) error {
 		}
 
 		into.Queries = append(into.Queries, query)
+	} else if strings.HasSuffix(file, ".queries.json") {
+		fd, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		defer fd.Close()
+
+		queries := make([]*api.PreparedQueryDefinition, 0)
+		if err := json.NewDecoder(fd).Decode(&queries); err != nil {
+			return err
+		}
+
+		into.Queries = append(into.Queries, queries...)
 	} else {
 		into.ConsulLoadOpts.ConfigFiles = append(into.ConsulLoadOpts.ConfigFiles, file)
 	}
