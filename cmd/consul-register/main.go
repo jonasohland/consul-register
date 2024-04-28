@@ -139,11 +139,16 @@ func main() {
 		}
 	}()
 
-	// start http server
-	server, err := htx.NewContextServer(ctx, server.NewHandler(svc), "tcp", cmd.Listen)
-	if err != nil {
-		log.Error("could not start http server", "error", err)
-		os.Exit(1)
+	var srv htx.Server
+
+	if cmd.Listen != "" {
+		// start http server
+		srv, err = htx.NewContextServer(ctx, server.NewHandler(svc), "tcp", cmd.Listen)
+		if err != nil {
+			log.Error("could not start http server", "error", err)
+			os.Exit(1)
+		}
+
 	}
 
 	// wait for exit
@@ -155,10 +160,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// wait for http server shutdown
-	if err := server.Wait(time.Second * 5); err != nil {
-		log.Error("http server shutdown failed", "error", err)
-		os.Exit(1)
+	if srv != nil {
+		// wait for http server shutdown
+		if err := srv.Wait(time.Second * 5); err != nil {
+			log.Error("http server shutdown failed", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	log.Info("shutdown complete")
